@@ -1,0 +1,139 @@
+
+books <- gutenberg_download(c(805,9830,6695,4368,245,86,3176,1837,3186), meta_fields = "title")
+
+
+by_chapter <- books %>%
+  group_by(title) %>%
+  mutate(chapter = cumsum(str_detect(text, regex("^chapter ", ignore_case = TRUE)))) %>%
+  ungroup() %>%
+  filter(chapter > 0)
+
+by_chapter_word <- by_chapter %>%
+  unite(title_chapter, title, chapter) %>%
+  unnest_tokens(word, text)
+
+word_counts <- by_chapter_word %>%
+  anti_join(stop_words) %>%
+  count(title_chapter, word, sort = TRUE) %>%
+  ungroup()
+
+
+chapters_matrix <- word_counts %>%
+  cast_dtm(title_chapter, word, n)
+
+chapters_matrix
+
+library(topicmodels)
+chapters_lda <- LDA(chapters_matrix, k = 2, control = list(seed = 123))
+chapters_lda
+
+
+
+topics <- tidy(chapters_lda, matrix = "beta")
+topics
+
+
+top_terms <- topics %>%
+  group_by(topic) %>%
+  top_n(10, beta) %>%
+  ungroup() %>%
+  arrange(topic, -beta)
+
+top_terms %>%
+  mutate(term = reorder(term, beta)) %>%
+  ggplot(aes(term, beta, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free") +
+  coord_flip()
+
+
+
+
+
+beta_spread <- topics %>%
+  mutate(topic = paste0("topic", topic)) %>%
+  spread(topic, beta) %>%
+  filter(topic1 > .001 | topic2 > .001) %>%
+  mutate(log_ratio = log2(topic2 / topic1))
+
+beta_spread
+
+
+chapters <- tidy(chapters_lda, matrix = "gamma")
+
+chapters
+
+chapters <- chapters %>%
+  separate(document, c("title", "chapter"), sep = "_", convert = TRUE)
+
+
+chapters %>%
+  mutate(title = reorder(title, gamma * topic)) %>%
+  ggplot(aes(factor(topic), gamma)) +
+  geom_boxplot() +
+  facet_wrap(~ title)
+
+
+
+chapter_classifications <- chapters %>%
+  group_by(title, chapter) %>%
+  top_n(1, gamma) %>%
+  ungroup()
+
+chapter_classifications
+
+
+book_topics <- chapter_classifications %>%
+  count(title, topic) %>%
+  group_by(title) %>%
+  top_n(1, n) %>%
+  ungroup() %>%
+  transmute(consensus = title, topic)
+
+chapter_classifications %>%
+  inner_join(book_topics, by = "topic") %>%
+  filter(title != consensus)
+
+
+assignments <- augment(chapters_lda, data = chapters_matrix)
+
+assignments
+
+
+
+assignments <- assignments %>%
+  separate(document, c("title", "chapter"), sep = "_", convert = TRUE) %>%
+  inner_join(book_topics, by = c(".topic" = "topic"))
+
+assignments
+
+
+assignments %>%
+  count(title, consensus, wt = count) %>%
+  group_by(title) %>%
+  mutate(percent = n / sum(n)) %>%
+  ggplot(aes(consensus, title, fill = percent)) +
+  geom_tile() +
+  scale_fill_gradient2(high = "red", label = percent_format()) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1),
+        panel.grid = element_blank()) +
+  labs(x = "Book words were assigned to",
+       y = "Book words came from",
+       fill = "% of assignments")
+
+
+wrong_words <- assignments %>%
+  filter(title != consensus)
+
+wrong_words
+
+
+wrong_words %>%
+  count(title, consensus, term, wt = count) %>%
+  ungroup() %>%
+  arrange(desc(n))
+
+
+
+Results are as expected. There is no clear categorization in terms of topic per book/author. Although different in their style, their vocabulary and linguistic construction is somehow correlated (although arguable and not peaceful). Gamma's plot is the best example of this. There is no unanimous distribution by chapter regarding underlying topic. Similar conclusion is represented the confusion matrix in which there are no clear cluster areas. Usually people would go for an analysis involving authors from topics mostly unrelated in order to check if the algorithm would be able to spot the differences. In my case I was curious to quantify to which extent these two were related to each other. 
