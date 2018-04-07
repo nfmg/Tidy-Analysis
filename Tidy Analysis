@@ -1,5 +1,18 @@
 
 
+
+#Author             		Book		                                          Gutenberg Code
+F. Scott Fitzgerald		  This side of Paradise		                          805
+F. Scott Fitzgerald		  The Beautiful and Damned		                      9830
+F. Scott Fitzgerald		  Tales of the Jazz Age		                          6695
+F. Scott Fitzgerald		  Flappers and Philosophers		                      4368
+Mark Twain		          Life on the Mississippi		                        245
+Mark Twain		          Connecticut Yankee in King Arthur's Court		      86
+Mark Twain		          The Innocents Abroad		                          3176
+Mark Twain		          The Prince and the Pauper		                      1837
+Mark Twain		          The Mysterious Stranger, and Other Stories		    3186
+
+
 fitzgerald <- gutenberg_download(c(805,9830,6695,4368), meta_fields = "title")
 
 
